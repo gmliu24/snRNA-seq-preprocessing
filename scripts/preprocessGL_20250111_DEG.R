@@ -1,4 +1,12 @@
-# DEG analysis
+# DEG analysis based on preprocessGL_20250111
+# Output Folder structure: 
+# - /projectnb/mccall/guangmeiliu/snrnaseq_gmliu/analysis
+#   - preprocessDate (same name as the script’s)
+#     - DEG
+#       - Different method (filtering parameters)
+#         - GO
+#           - GO_up
+#           - GO_down
 
 library(tidyverse) # dplyr and ggplot2
 library(Seurat) # Seurat toolkit
@@ -15,11 +23,10 @@ library(ggplotify)
 set.seed(12345)
 
 basedir <- "/projectnb/mccall/guangmeiliu/snrnaseq_gmliu/analysis/preprocess20250111/"
-outputdir <- paste0(basedir,"DEG/")
-dir.create(outputdir,showWarnings = FALSE)
+inputdir <- basedir
 
 # 1. Fetch data ===================================================
-data_harmony <- readRDS('/projectnb/mccall/guangmeiliu/snrnaseq_gmliu/analysis/preprocess20250111/data_harmony.RDS')
+data_harmony <- readRDS(paste0(basedir,'data_harmony.RDS'))
 
 DefaultAssay(data_harmony) <- 'soupX_SCT'
 Idents(data_harmony) <- 'celltype'
@@ -27,8 +34,10 @@ Idents(data_harmony) <- 'celltype'
 DimPlot(data_harmony, reduction = "umap", group.by = "celltype", label =TRUE, repel = F, #shuffle aviods ovelapping
         shuffle = T,  pt.size = 1, label.size = 5)
 
-
 # 2. DEG analysis in specific cell type ===================================================
+outputdir <- paste0(basedir,"DEG/soupX_SCT_data/") #specify method in the outputdir
+dir.create(outputdir,showWarnings = FALSE)
+
 glialcell_degs <- FindMarkers(subset(data_harmony, celltype == 'glial cell'), logfc.threshold = 0.25,
                            only.pos = F,
                            test.use = 'wilcox',
@@ -80,8 +89,8 @@ p1 <- ggplot(data = glialcell_degs, aes(x = avg_log2FC, y = -log10(p_val_adj), c
     legend.position = 'top',
     legend.text = element_text(size = 14, face = 'bold'),
     plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
-    axis.line = element_line(size = 1.5),   # Change axis line thickness
-    axis.ticks = element_line(size = 1.5),
+    axis.line = element_line(linewidth = 1.5),   # Change axis line thickness
+    axis.ticks = element_line(linewidth = 1.5),
     plot.tag = element_text(size = 18, face = "bold"),
     plot.tag.position = c(0.1, 0.99)
   ) 
@@ -89,6 +98,11 @@ p1 <- ggplot(data = glialcell_degs, aes(x = avg_log2FC, y = -log10(p_val_adj), c
 ggsave(p1, filename = paste0(outputdir,'DEGs_glialcell.png'), width = 12, height = 10)
 
 # 3. Function to run DEG on each broad cluster ===================================================
+outputdir <- paste0(basedir,"DEG/soupX_SCT_data2/") #specify method in the outputdir
+dir.create(outputdir,showWarnings = FALSE)
+figdir <- paste0(outputdir,"figures/")
+dir.create(figdir,showWarnings = FALSE)
+
 broadcell <- unique(data_harmony@meta.data$celltype)
 for (cell in broadcell) {
   # Subset the data for the current cell type
@@ -110,14 +124,28 @@ for (cell in broadcell) {
   # Add up-/down-regulation significance
   up_down_spec <- function(data){
     data$significance <- "Non-significant"
-    data$significance[data$avg_log2FC > 1 & data$p_val < 0.05] <- 'Up-regulated'
-    data$significance[data$avg_log2FC < -1 & data$p_val < 0.05] <- 'Down-regulated'
+    data$significance[data$avg_log2FC > 1 & data$p_val_adj < 0.05] <- 'Up-regulated'
+    data$significance[data$avg_log2FC < -1 & data$p_val_adj < 0.05] <- 'Down-regulated'
     return(data)
   }
   degs <- up_down_spec(degs)
-  
+ 
   # Write the DEG results to a CSV file
   write.csv(degs, paste0(outputdir, cell, "_DEG.csv"), row.names = T)
+  
+  # Make a histogram to see the distribution of avg_log2FC
+  p1 <- ggplot(subset(degs, significance == "Up-regulated"), aes(x=avg_log2FC)) + geom_histogram() +
+    geom_density(alpha=0.2, fill="lightpink") +
+    ggtitle(paste("Log2FC distribution of upgenes in",cell))
+  
+  p2 <- ggplot(subset(degs, significance == "Down-regulated"), aes(x=avg_log2FC)) + geom_histogram() +
+    geom_density(alpha=0.2, fill="lightblue") +
+    ggtitle(paste("Log2FC distribution of downgenes in",cell))
+  
+  ggsave(p1, filename = paste0(figdir, cell, "_up_hist.png"), width = 12, height = 10)
+  ggsave(p2, filename = paste0(figdir, cell, "_down_hist.png"), width = 12, height = 10)
+  # Categorize up- and down-regulated genes as lowly, moderately and higly 
+  
   
   # Create a volcano plot
   top20_labels <- degs %>%
@@ -135,7 +163,7 @@ for (cell in broadcell) {
                     size = 5, show.legend = F) +
     geom_vline(xintercept = c(-1, 1), col = "gray", linetype = 'dashed') +
     geom_hline(yintercept = -log10(0.05), col = "gray", linetype = 'dashed') +
-    ggtitle(paste('DEGs of 42D drprnull vs w1118')) +
+    ggtitle(expression("DEGs of 42D " * italic("drprnull") * " vs " * italic('w1118'))) +
     scale_color_manual(values = c("#0072B2", "grey", "#CC0033"), 
                        labels = c("Downregulated", "Not significant", "Upregulated")) +
     theme_classic(base_size = 16) +
@@ -150,14 +178,14 @@ for (cell in broadcell) {
       legend.position = 'top',
       legend.text = element_text(size = 14, face = 'bold'),
       plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
-      axis.line = element_line(size = 1.5),
-      axis.ticks = element_line(size = 1.5),
+      axis.line = element_line(linewidth = 1.5),
+      axis.ticks = element_line(linewidth = 1.5),
       plot.tag = element_text(size = 18, face = "bold"),
       plot.tag.position = c(0.1, 0.99)
     )
   
   # Save the volcano plot
-  ggsave(p, filename = paste0(outputdir, cell, "_DEG.png"), width = 12, height = 10)
+  ggsave(p, filename = paste0(figdir, cell, "_DEG.png"), width = 12, height = 10)
 }
 
 ## Merge all .csv files into one file ===================================================
@@ -183,16 +211,17 @@ for (file in file_list) {
 }
 
 # Merge all data frames in the list into one
-merged_data <- bind_rows(data_list)
+all.degs <- bind_rows(data_list)
 
 # Write the merged data to a new CSV file
-write.csv(merged_data, file = paste0(outputdir, "All_cell_types_DEGs.csv"), row.names = FALSE)
+write.csv(all.degs, file = paste0(outputdir, "All_celltypes_DEGs.csv"), row.names = FALSE)
 
-## Organize genes into different sheets of xlxs file ===================================================
-data <- read_csv(paste0(inputdir, "All_cell_types_DEGs.csv"))
-broadcell <- unique(all.degs$celltype)
+## Organize genes into different sheets in xlxs file ===================================================
+library(openxlsx)
+data <- read_csv(paste0(outputdir, "All_celltypes_DEGs.csv"))
+broadcell <- unique(data$celltype)
 
-output_file <- paste0(outputdir, "Up_and_Down_Genes_by_CellType.xlsx")
+output_file <- paste0(outputdir, "Up_and_Down_Genes_by_celltype.xlsx")
 wb <- createWorkbook()
 
 for (cell in broadcell) {
@@ -217,30 +246,64 @@ for (cell in broadcell) {
 }
 # Save the workbook
 saveWorkbook(wb, file = output_file, overwrite = TRUE)
+
+## Create a histogram to see the distribution of log2FC across all up- and down- regulated genes ===================================================
+## fig size and font size are optimal for publication
+p3 <- ggplot(subset(data, significance != "Non-significant"), aes(x=avg_log2FC, fill = significance, color = significance)) + geom_histogram() +
+  geom_density(alpha=0.2, fill="grey") +
+  ggtitle(paste("Log2FC distribution of all genes")) +
+  theme_bw() +
+  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14),
+        legend.text = element_text(size = 14),
+        legend.title = element_blank(),
+        legend.position = "top")
+ggsave(p3, filename = paste0(figdir, "All_genes_hist.png"), width = 8, height = 8)
+
+p4 <- ggplot(subset(data, significance == "Up-regulated"), aes(x=avg_log2FC)) + geom_histogram(aes(y=after_stat(density)), fill = "lightblue", color = "black") +
+  geom_density(alpha=0.2, fill = "grey") +
+  ggtitle(paste("Log2FC distribution of up-regulated genes")) +
+  theme_bw() +
+  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14),
+        legend.text = element_text(size = 14),
+        legend.title = element_blank())
+ggsave(p4, filename = paste0(figdir, "Upgenes_hist.png"), width = 8, height = 8)
+
+p5 = ggplot(subset(data, significance == "Down-regulated"), aes(x=avg_log2FC)) + geom_histogram(aes(y=after_stat(density)), fill = "lightpink", color = "black") +
+  geom_density(alpha=0.2, fill = "grey") +
+  ggtitle(paste("Log2FC distribution of down-regulated genes")) +
+  theme_bw() +
+  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14),
+        legend.text = element_text(size = 14),
+        legend.title = element_blank())
+ggsave(p5, filename = paste0(figdir, "Downgenes_hist.png"), width = 8, height = 8)
+
+
 # 4. GO analysis ===================================================
 ##https://www.melbournebioinformatics.org.au/tutorials/tutorials/seurat-go/seurat-go/
 ##Convert gene symbols to Entrez IDs
-library(drosophila2.db)
+library(org.Dm.eg.db)
 library(enrichplot)
 library(clusterProfiler)
 
 basedir <- "/projectnb/mccall/guangmeiliu/snrnaseq_gmliu/analysis/preprocess20250111/"
-inputdir <- paste0(basedir,"DEG/")
+## GO analysis for upregulated genes
+outputdir <- paste0(basedir,"DEG/soupX_SCT_data2/GO/GO_up/")
 dir.create(outputdir,showWarnings = FALSE)
 
-all.degs <- read_csv(paste0(inputdir, "All_cell_types_DEGs.csv"))
-broadcell <- unique(all.degs$celltype)
-## GO analysis for upregulated genes
-outputdir <- paste0(basedir,"GO_up/")
-dir.create(outputdir,showWarnings = FALSE)
 for (cell in broadcell){
   up.degs <- subset(all.degs, celltype == cell & significance == 'Up-regulated')
   cell.gene_ids <- bitr(up.degs$gene, fromType = "SYMBOL",
-                        toType = "ENTREZID", OrgDb = drosophila2.db)
+                        toType = "ENTREZID", OrgDb = org.Dm.eg.db)
   
   ##Perform GO enrichment analysis for Cluster 2
   cell.ego <- enrichGO(gene = cell.gene_ids$ENTREZID, 
-                       OrgDb = drosophila2.db, 
+                       OrgDb = org.Dm.eg.db, 
                        ont = "ALL", # biological process
                        pAdjustMethod = "BH", 
                        pvalueCutoff = 0.05, 
@@ -276,8 +339,8 @@ for (cell in broadcell){
       axis.text.x = element_text(size = 20, face = "bold"),
       axis.title.x = element_text(size = 20, face = "bold"),
       plot.title = element_text(size = 35, face = "bold", hjust = 0.5),
-      axis.line = element_line(size = 1.5),
-      axis.ticks = element_line(size = 1.5)
+      axis.line = element_line(linewidth = 1.5),
+      axis.ticks = element_line(linewidth = 1.5)
     ) + 
     ggtitle(str_wrap(paste("GO Term Analysis for", cell), width = 30))
   ggsave(updot, filename = paste0(outputdir, cell, "_up_GO_dotplot.png"), width = 12, height = 10)
@@ -291,11 +354,11 @@ outputdir <- paste0(basedir,"GO_down/")
 for (cell in broadcell){
   down.degs <- subset(all.degs, celltype == cell & significance == 'Down-regulated')
   cell.gene_ids <- bitr(down.degs$gene, fromType = "SYMBOL",
-                        toType = "ENTREZID", OrgDb = drosophila2.db)
+                        toType = "ENTREZID", OrgDb = org.Dm.eg.db)
   
   ##Perform GO enrichment analysis for Cluster 2
   cell.ego <- enrichGO(gene = cell.gene_ids$ENTREZID, 
-                       OrgDb = drosophila2.db, 
+                       OrgDb = org.Dm.eg.db, 
                        ont = "ALL", # biological process
                        pAdjustMethod = "BH", 
                        pvalueCutoff = 0.05, 
@@ -331,8 +394,8 @@ for (cell in broadcell){
       axis.text.x = element_text(size = 20, face = "bold"),
       axis.title.x = element_text(size = 20, face = "bold"),
       plot.title = element_text(size = 35, face = "bold", hjust = 0.5),
-      axis.line = element_line(size = 1.5),
-      axis.ticks = element_line(size = 1.5)
+      axis.line = element_line(linewidth = 1.5),
+      axis.ticks = element_line(linewidth = 1.5)
     ) + 
     ggtitle(str_wrap(paste("GO Term Analysis for", cell), width = 35))
   ggsave(downdot, filename = paste0(outputdir, cell, "_down_GO_dotplot.png"), width = 12, height = 10)
