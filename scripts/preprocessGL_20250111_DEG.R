@@ -216,6 +216,83 @@ all.degs <- bind_rows(data_list)
 # Write the merged data to a new CSV file
 write.csv(all.degs, file = paste0(outputdir, "All_celltypes_DEGs.csv"), row.names = FALSE)
 
+## Create a histogram to see the distribution of log2FC across all up- and down- regulated genes ===================================================
+## fig size and font size are optimal for publication
+p3 <- ggplot(subset(data, significance != "Non-significant"), aes(x=avg_log2FC, fill = significance, color = significance)) + geom_histogram() +
+  geom_density(alpha=0.2, fill="grey") +
+  ggtitle(paste("Log2FC distribution of all genes")) +
+  theme_bw() +
+  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14),
+        legend.text = element_text(size = 14),
+        legend.title = element_blank(),
+        legend.position = "top")
+ggsave(p3, filename = paste0(figdir, "All_genes_hist.png"), width = 8, height = 8)
+
+# Calculate the 0.33 and 0.66 percentiles
+Up_per <- quantile(subset(data, significance == "Up-regulated")$avg_log2FC, probs = c(0.33, 0.66))
+Down_per <- quantile(subset(data, significance == "Down-regulated")$avg_log2FC, probs = c(0.33, 0.66))
+Up_per
+Down_per
+
+p4 <- ggplot(subset(data, significance == "Up-regulated"), aes(x=avg_log2FC)) + geom_histogram(aes(y=after_stat(density)), fill = "lightblue", color = "black") +
+  geom_density(alpha=0.2, fill = "grey") +
+  ggtitle(paste("Log2FC distribution of up-regulated genes")) +
+  geom_vline(xintercept = Up_per[1], color = "grey", linetype = "dashed", size = 1) + # 33rd percentile
+  geom_vline(xintercept = Up_per[2], color = "grey", linetype = "dashed", size = 1) + # 66th percentile
+  annotate("text", x = Up_per[1], y = 0.5, label = "33%", color = "black", size = 5) +
+  annotate("text", x = Up_per[2], y = 0.5, label = "66%", color = "black", size = 5) +
+  theme_bw() +
+  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14),
+        legend.text = element_text(size = 14),
+        legend.title = element_blank())
+ggsave(p4, filename = paste0(figdir, "Upgenes_hist.png"), width = 8, height = 8)
+
+p5 = ggplot(subset(data, significance == "Down-regulated"), aes(x=avg_log2FC)) + geom_histogram(aes(y=after_stat(density)), fill = "lightpink", color = "black") +
+  geom_density(alpha=0.2, fill = "grey") +
+  ggtitle(paste("Log2FC distribution of down-regulated genes")) +
+  geom_vline(xintercept = Down_per[1], color = "grey", linetype = "dashed", size = 1) + # 33rd percentile
+  geom_vline(xintercept = Down_per[2], color = "grey", linetype = "dashed", size = 1) + # 66th percentile
+  annotate("text", x = Down_per[1], y = 0.7, label = "33%", color = "black", size = 5) +
+  annotate("text", x = Down_per[2], y = 0.7, label = "66%", color = "black", size = 5) +
+  theme_bw() +
+  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14),
+        legend.text = element_text(size = 14),
+        legend.title = element_blank())
+ggsave(p5, filename = paste0(figdir, "Downgenes_hist.png"), width = 8, height = 8)
+
+## Add category for lowly/moderately/highly regulated genes ===================================================
+## Calculate percentiles
+
+basedir <- "/projectnb/mccall/guangmeiliu/snrnaseq_gmliu/analysis/preprocess20250111/"
+outputdir <- paste0(basedir,"DEG/soupX_SCT_data2/") #specify method in the outputdir
+data <- read_csv(paste0(outputdir, "All_celltypes_DEGs.csv"))
+
+Up_per <- quantile(subset(data, significance == "Up-regulated")$avg_log2FC, probs = c(0.33, 0.66))
+Down_per <- quantile(subset(data, significance == "Down-regulated")$avg_log2FC, probs = c(0.33, 0.66))
+Up_per
+Down_per
+
+data <- data %>%
+  mutate(
+    category = case_when(
+      significance == "Up-regulated" & avg_log2FC >= 1 & avg_log2FC < Up_per[1] ~ "low",
+      significance == "Up-regulated" & avg_log2FC >= Up_per[1] & avg_log2FC < Up_per[2] ~ "mid",
+      significance == "Up-regulated" & avg_log2FC >= Up_per[2] ~ "high",
+      significance == "Down-regulated" & avg_log2FC < Down_per[1] ~ "high",
+      significance == "Down-regulated" & avg_log2FC >= Down_per[1] & avg_log2FC < Down_per[2] ~ "mid",
+      significance == "Down-regulated" & avg_log2FC >= Down_per[2] ~ "low",
+      TRUE ~ NA_character_
+    )
+  ) 
+
+write.csv(data, file = paste0(outputdir, "All_celltypes_DEGs.csv"), row.names = FALSE)
+
 ## Organize genes into different sheets in xlxs file ===================================================
 library(openxlsx)
 data <- read_csv(paste0(outputdir, "All_celltypes_DEGs.csv"))
@@ -247,44 +324,7 @@ for (cell in broadcell) {
 # Save the workbook
 saveWorkbook(wb, file = output_file, overwrite = TRUE)
 
-## Create a histogram to see the distribution of log2FC across all up- and down- regulated genes ===================================================
-## fig size and font size are optimal for publication
-p3 <- ggplot(subset(data, significance != "Non-significant"), aes(x=avg_log2FC, fill = significance, color = significance)) + geom_histogram() +
-  geom_density(alpha=0.2, fill="grey") +
-  ggtitle(paste("Log2FC distribution of all genes")) +
-  theme_bw() +
-  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14),
-        legend.text = element_text(size = 14),
-        legend.title = element_blank(),
-        legend.position = "top")
-ggsave(p3, filename = paste0(figdir, "All_genes_hist.png"), width = 8, height = 8)
-
-p4 <- ggplot(subset(data, significance == "Up-regulated"), aes(x=avg_log2FC)) + geom_histogram(aes(y=after_stat(density)), fill = "lightblue", color = "black") +
-  geom_density(alpha=0.2, fill = "grey") +
-  ggtitle(paste("Log2FC distribution of up-regulated genes")) +
-  theme_bw() +
-  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14),
-        legend.text = element_text(size = 14),
-        legend.title = element_blank())
-ggsave(p4, filename = paste0(figdir, "Upgenes_hist.png"), width = 8, height = 8)
-
-p5 = ggplot(subset(data, significance == "Down-regulated"), aes(x=avg_log2FC)) + geom_histogram(aes(y=after_stat(density)), fill = "lightpink", color = "black") +
-  geom_density(alpha=0.2, fill = "grey") +
-  ggtitle(paste("Log2FC distribution of down-regulated genes")) +
-  theme_bw() +
-  theme(plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14),
-        legend.text = element_text(size = 14),
-        legend.title = element_blank())
-ggsave(p5, filename = paste0(figdir, "Downgenes_hist.png"), width = 8, height = 8)
-
-
-# 4. GO analysis ===================================================
+# 4. GO analysis 1===================================================
 ##https://www.melbournebioinformatics.org.au/tutorials/tutorials/seurat-go/seurat-go/
 ##Convert gene symbols to Entrez IDs
 library(org.Dm.eg.db)
@@ -296,13 +336,42 @@ basedir <- "/projectnb/mccall/guangmeiliu/snrnaseq_gmliu/analysis/preprocess2025
 outputdir <- paste0(basedir,"DEG/soupX_SCT_data2/GO/GO_up/")
 dir.create(outputdir,showWarnings = FALSE)
 
+ ##Map gene id ============================
+##Add EntrezID column in the data frame
+cell.gene_ids <- bitr(data$gene, fromType = "SYMBOL",
+                      toType = "ENTREZID", OrgDb = org.Dm.eg.db)
+
+data <- merge(data, cell.gene_ids, 
+              by.x = "gene",        # Match based on gene column in all.degs
+              by.y = "SYMBOL",      # Match based on SYMBOL column in cell.gene_ids
+              all.x = TRUE)         # Keep all rows from all.degs, even if no match is found
+
+data$Entrez <- data$ENTREZID
+
+##If some genes fail to map, look them up in PANGEA and export a csv file
+data2 <- read_csv(paste0(outputdir,"missingids.csv"))
+
+merged_data <- data %>%
+  left_join(data2, by = c("gene" = "Search Term"))
+
+# Update the "entrez" column with the "ID" from data2
+merged_data$Entrez <- ifelse(!is.na(merged_data$`Mapped to Entrez Gene`), merged_data$`Mapped to Entrez Gene`, merged_data$Entrez)
+
+merged_data <- merged_data %>% 
+  select(-`Mapped to Entrez Gene`, -`Gene Type`, -`Flybase ID`, -Symbol, - Messages, -Duplicates)
+
+write.csv(merged_data, paste0(outputdir,"All_celltypes_DEGs.csv"))
+
+data <- merged_data
+
+##Perform GO term analysis =========
+all.degs <- data
+broadcell <- unique(data$celltype)
 for (cell in broadcell){
   up.degs <- subset(all.degs, celltype == cell & significance == 'Up-regulated')
-  cell.gene_ids <- bitr(up.degs$gene, fromType = "SYMBOL",
-                        toType = "ENTREZID", OrgDb = org.Dm.eg.db)
   
   ##Perform GO enrichment analysis for Cluster 2
-  cell.ego <- enrichGO(gene = cell.gene_ids$ENTREZID, 
+  cell.ego <- enrichGO(gene = up.degs$Entrez, 
                        OrgDb = org.Dm.eg.db, 
                        ont = "ALL", # biological process
                        pAdjustMethod = "BH", 
@@ -349,15 +418,15 @@ for (cell in broadcell){
 
 #broadcell = "epithelial cell"
 ## GO analysis for down-regulated genes
-outputdir <- paste0(basedir,"GO_down/")
+outputdir <- paste0(basedir,"DEG/soupX_SCT_data2/GO/GO_down/")
+dir.create(outputdir,showWarnings = FALSE)
 #dir.create(outputdir,showWarnings = FALSE)
+
 for (cell in broadcell){
   down.degs <- subset(all.degs, celltype == cell & significance == 'Down-regulated')
-  cell.gene_ids <- bitr(down.degs$gene, fromType = "SYMBOL",
-                        toType = "ENTREZID", OrgDb = org.Dm.eg.db)
   
   ##Perform GO enrichment analysis for Cluster 2
-  cell.ego <- enrichGO(gene = cell.gene_ids$ENTREZID, 
+  cell.ego <- enrichGO(gene = down.degs$Entrez, 
                        OrgDb = org.Dm.eg.db, 
                        ont = "ALL", # biological process
                        pAdjustMethod = "BH", 
@@ -401,6 +470,76 @@ for (cell in broadcell){
   ggsave(downdot, filename = paste0(outputdir, cell, "_down_GO_dotplot.png"), width = 12, height = 10)
   
 }
+
+
+# 5. GO analysis 2 ===================================================
+## https://yulab-smu.top/biomedical-knowledge-mining-book/clusterprofiler-comparecluster.html
+
+## Show GO term for both up- and down-regulated genes in the same plot for each celltype ===========================
+outputdir <- paste0(basedir,"DEG/soupX_SCT_data2/GO/GO_updown/")
+dir.create(outputdir,showWarnings = FALSE)
+
+all.degs <- subset(data, significance != "Non-significant")
+
+##Define dotplot theme
+theme_dotplot <- theme(
+  axis.text.y = element_text(size = 18),
+  axis.text.x = element_text(size = 18),
+  axis.title.x = element_text(size = 18),
+  plot.title = element_text(size = 20, face = "bold", hjust = 0.5)
+)
+
+for (cell in broadcell){
+  
+  cell_degs <- subset(all.degs, celltype == cell)
+  bp_go_updown <- compareCluster(Entrez~significance, data=cell_degs, fun="enrichGO", OrgDb='org.Dm.eg.db',ont="BP")
+  cc_go_updown <- compareCluster(Entrez~significance, data=cell_degs, fun="enrichGO", OrgDb='org.Dm.eg.db',ont="CC")
+  mf_go_updown <- compareCluster(Entrez~significance, data=cell_degs, fun="enrichGO", OrgDb='org.Dm.eg.db',ont="MF")
+  
+  if (!is.null(bp_go_updown) && nrow(bp_go_updown) > 0) {
+    bp <- dotplot(bp_go_updown) + 
+      ggtitle(str_wrap(paste("Biological process enrichment in", cell), width = 30)) +
+      scale_y_discrete(guide = guide_axis(check.overlap = TRUE)) +
+      scale_x_discrete(guide = guide_axis(check.overlap = TRUE)) +
+      theme_dotplot
+    ggsave(bp, filename = paste0(outputdir, cell, "_BP_dotplot.png"), width = 14, height = 10)
+  } else {
+    message(paste("No BP enrichment found for", cell))
+  }
+  
+  if (!is.null(cc_go_updown) && nrow(cc_go_updown) > 0) {
+    cc <- dotplot(cc_go_updown) + 
+      ggtitle(str_wrap(paste("Cellular component enrichment in", cell), width = 30)) +
+      scale_y_discrete(guide = guide_axis(check.overlap = TRUE)) +
+      scale_x_discrete(guide = guide_axis(check.overlap = TRUE)) +
+      theme_dotplot
+    ggsave(cc, filename = paste0(outputdir, cell, "_CC_dotplot.png"), width = 14, height = 10)
+  } else {
+    message(paste("No CC enrichment found for", cell))
+  }
+  
+  if (!is.null(mf_go_updown) && nrow(mf_go_updown) > 0) {
+    mf <- dotplot(mf_go_updown) + 
+      ggtitle(str_wrap(paste("Molecular function enrichment in", cell), width = 30)) +
+      scale_y_discrete(guide = guide_axis(check.overlap = TRUE)) +
+      scale_x_discrete(guide = guide_axis(check.overlap = TRUE)) +
+      theme_dotplot
+    ggsave(mf, filename = paste0(outputdir, cell, "_MF_dotplot.png"), width = 14, height = 10)
+  } else {
+    message(paste("No MF enrichment found for", cell))
+  }
+  
+}
+
+kegg_updown <- compareCluster(Entrez~significance+celltype, data=cell.gene_ids, fun="enrichKEGG")
+
+
+
+
+
+
+
+## GO analysis for genes in each category and generate figure for multiple groups ===========================
 
 # supp. Add meta.data column using join function ===================================================
 ###Load glialcell annotation
