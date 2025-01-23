@@ -490,12 +490,37 @@ theme_dotplot <- theme(
 )
 
 for (cell in broadcell){
+  message(paste("Processing cell type:", cell))
   
   cell_degs <- subset(all.degs, celltype == cell)
   bp_go_updown <- compareCluster(Entrez~significance, data=cell_degs, fun="enrichGO", OrgDb='org.Dm.eg.db',ont="BP")
   cc_go_updown <- compareCluster(Entrez~significance, data=cell_degs, fun="enrichGO", OrgDb='org.Dm.eg.db',ont="CC")
   mf_go_updown <- compareCluster(Entrez~significance, data=cell_degs, fun="enrichGO", OrgDb='org.Dm.eg.db',ont="MF")
+
+  results_list <- list()
   
+  if (!is.null(bp_go_updown) && nrow(bp_go_updown) > 0) {
+    bp_go_updown@compareClusterResult$GO <- "BP"
+    results_list[["BP"]] <- bp_go_updown@compareClusterResult
+  }
+  if (!is.null(cc_go_updown) && nrow(cc_go_updown) > 0) {
+    cc_go_updown@compareClusterResult$GO <- "CC"
+    results_list[["CC"]] <- cc_go_updown@compareClusterResult
+  }
+  if (!is.null(mf_go_updown) && nrow(mf_go_updown) > 0) {
+    mf_go_updown@compareClusterResult$GO <- "MF"
+    results_list[["MF"]] <- mf_go_updown@compareClusterResult
+  }
+  
+  # Merge all non-NULL results
+  if (length(results_list) > 0) {
+    merged_go_updown <- do.call(rbind, results_list)
+    # Save the merged results to a CSV file
+    write.csv(merged_go_updown, file = paste0(outputdir, cell, "_GO_results.csv"), row.names = FALSE)
+  } else {
+    message(paste("No GO enrichment results for cell type:", cell))
+  }
+
   if (!is.null(bp_go_updown) && nrow(bp_go_updown) > 0) {
     bp <- dotplot(bp_go_updown) + 
       ggtitle(str_wrap(paste("Biological process enrichment in", cell), width = 30)) +
