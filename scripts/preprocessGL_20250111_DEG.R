@@ -33,6 +33,7 @@ Idents(data_harmony) <- 'celltype'
 
 DimPlot(data_harmony, reduction = "umap", group.by = "celltype", label =TRUE, repel = F, #shuffle aviods ovelapping
         shuffle = T,  pt.size = 1, label.size = 5)
+data <- read_csv(paste0(outputdir, "All_celltypes_DEGs.csv"))
 
 # 2. DEG analysis in specific cell type ===================================================
 outputdir <- paste0(basedir,"DEG/soupX_SCT_data/") #specify method in the outputdir
@@ -501,14 +502,17 @@ for (cell in broadcell){
   
   if (!is.null(bp_go_updown) && nrow(bp_go_updown) > 0) {
     bp_go_updown@compareClusterResult$GO <- "BP"
+    bp_go_updown@compareClusterResult$celltype <- cell
     results_list[["BP"]] <- bp_go_updown@compareClusterResult
   }
   if (!is.null(cc_go_updown) && nrow(cc_go_updown) > 0) {
     cc_go_updown@compareClusterResult$GO <- "CC"
+    cc_go_updown@compareClusterResult$celltype <- cell
     results_list[["CC"]] <- cc_go_updown@compareClusterResult
   }
   if (!is.null(mf_go_updown) && nrow(mf_go_updown) > 0) {
     mf_go_updown@compareClusterResult$GO <- "MF"
+    mf_go_updown@compareClusterResult$celltype <- cell
     results_list[["MF"]] <- mf_go_updown@compareClusterResult
   }
   
@@ -556,34 +560,122 @@ for (cell in broadcell){
   
 }
 
-kegg_updown <- compareCluster(Entrez~significance+celltype, data=cell.gene_ids, fun="enrichKEGG")
-
-
-
-
-
 
 
 ## GO analysis for genes in each category and generate figure for multiple groups ===========================
+  #Focus on neuron, glial cell and fat cell for the moment
+basedir <- "/projectnb/mccall/guangmeiliu/snrnaseq_gmliu/analysis/preprocess20250111/"
+data <- read_csv(paste0(basedir, "DEG/soupX_SCT_data2/All_celltypes_DEGs.csv"))
+outputdir <- paste0(basedir,"DEG/soupX_SCT_data2/GO/GO_category/")
+dir.create(outputdir,showWarnings = FALSE)
 
-# supp. Add meta.data column using join function ===================================================
-###Load glialcell annotation
-glialcell_metadata <- glialcell@meta.data
-###Merge subcluster in glialcell with data_harmony
-###Fetch celltype info
-data_harmony_metadata <- FetchData(data_harmony, 'celltype')
-data_harmony_metadata$cell_id <- rownames(data_harmony_metadata)
-###merge using left_join
-data_harmony_metadata <- left_join(x=data_harmony_metadata, y = glialcell_metadata, by='celltype')
-### Readd rownames
-rownames(data_harmony_metadata) <- data_harmony_metadata$cell_id
-view(data_harmony_metadata)
-###Add metadata
-data_harmony <- AddMetaData(data_harmony, metadata = data_harmony_metadata)
-table(data_harmony@meta.data$celltype)
+all.degs <- subset(data, significance != "Non-significant")
+broadcell <- c("neuron", "glial cell", "fat cell")
+
+##Define dotplot theme
+theme_dotplot <- theme(
+  axis.text.y = element_text(size = 18),
+  axis.text.x = element_text(size = 18, angle = 45, vjust=0.9,
+                             hjust=0.9),
+  axis.title.x = element_text(size = 18),
+  plot.title = element_text(size = 20, face = "bold", hjust = 0.5)
+)
+
+for (cell in broadcell){
+    cell_degs <- subset(all.degs, celltype == cell)
+    bp_go_updown <- compareCluster(Entrez~significance+category, data=cell_degs, fun="enrichGO", OrgDb='org.Dm.eg.db',ont="BP")
+    cc_go_updown <- compareCluster(Entrez~significance+category, data=cell_degs, fun="enrichGO", OrgDb='org.Dm.eg.db',ont="CC")
+    mf_go_updown <- compareCluster(Entrez~significance+category, data=cell_degs, fun="enrichGO", OrgDb='org.Dm.eg.db',ont="MF")
+  
+    results_list <- list()
+  
+    if (!is.null(bp_go_updown) && nrow(bp_go_updown) > 0) {
+      bp_go_updown@compareClusterResult$GO <- "BP"
+      bp_go_updown@compareClusterResult$celltype <- cell
+      results_list[["BP"]] <- bp_go_updown@compareClusterResult
+    }
+    if (!is.null(cc_go_updown) && nrow(cc_go_updown) > 0) {
+      cc_go_updown@compareClusterResult$GO <- "CC"
+      cc_go_updown@compareClusterResult$celltype <- cell
+      results_list[["CC"]] <- cc_go_updown@compareClusterResult
+    }
+    if (!is.null(mf_go_updown) && nrow(mf_go_updown) > 0) {
+      mf_go_updown@compareClusterResult$GO <- "MF"
+      mf_go_updown@compareClusterResult$celltype <- cell
+      results_list[["MF"]] <- mf_go_updown@compareClusterResult
+    }
+  
+  # Merge all non-NULL results
+    if (length(results_list) > 0) {
+      merged_go_updown <- do.call(rbind, results_list)
+    # Save the merged results to a CSV file
+      write.csv(merged_go_updown, file = paste0(outputdir, cell, "_GO_results.csv"), row.names = FALSE)
+    } else {
+      message(paste("No GO enrichment results for cell type:", cell))
+    }
+
+    if (!is.null(bp_go_updown) && nrow(bp_go_updown) > 0) {
+      bp <- dotplot(bp_go_updown) + 
+        ggtitle(str_wrap(paste("Biological process enrichment in", cell), width = 50)) +
+        scale_y_discrete(guide = guide_axis(check.overlap = TRUE)) +
+        scale_x_discrete(guide = guide_axis(check.overlap = TRUE)) +
+        theme_dotplot
+        ggsave(bp, filename = paste0(outputdir, cell, "_BP_dotplot.png"), width = 16, height = 10)
+    } else {
+      message(paste("No BP enrichment found for", cell))
+    }
+  
+    if (!is.null(cc_go_updown) && nrow(cc_go_updown) > 0) {
+      cc <- dotplot(cc_go_updown) + 
+      ggtitle(str_wrap(paste("Cellular component enrichment in", cell), width = 50)) +
+      scale_y_discrete(guide = guide_axis(check.overlap = TRUE)) +
+      scale_x_discrete(guide = guide_axis(check.overlap = TRUE)) +
+      theme_dotplot
+      ggsave(cc, filename = paste0(outputdir, cell, "_CC_dotplot.png"), width = 16, height = 10)
+    } else {
+      message(paste("No CC enrichment found for", cell))
+    }
+  
+    if (!is.null(mf_go_updown) && nrow(mf_go_updown) > 0) {
+      mf <- dotplot(mf_go_updown) + 
+      ggtitle(str_wrap(paste("Molecular function enrichment in", cell), width = 50)) +
+      scale_y_discrete(guide = guide_axis(check.overlap = TRUE)) +
+      scale_x_discrete(guide = guide_axis(check.overlap = TRUE)) +
+      theme_dotplot
+      ggsave(mf, filename = paste0(outputdir, cell, "_MF_dotplot.png"), width = 16, height = 10)
+    } else {
+      message(paste("No MF enrichment found for", cell))
+    }
+  
+}
+##Convert the geneid to symbol in the out put file
+basedir <- "/projectnb/mccall/guangmeiliu/snrnaseq_gmliu/analysis/preprocess20250111/DEG/soupX_SCT_data2/GO/GO_category"
+convert_entrez_to_symbol <- function(entrez_ids) {
+  entrez_list <- unlist(strsplit(entrez_ids, "/"))
+  symbols <- mapIds(org.Dm.eg.db, keys = entrez_list, column = "SYMBOL", keytype = "ENTREZID", multiVals = "first")
+  paste(symbols, collapse = "/")
+}
+
+csv_files <- list.files(basedir, pattern = "\\.csv$", full.names = TRUE)
+
+# Process each .csv file
+for (file in csv_files) {
+  data <- read.csv(file, stringsAsFactors = FALSE)
+  
+    # Convert Entrez IDs to Gene Symbols
+    data$Gene <- sapply(data$geneID, convert_entrez_to_symbol)
+    
+    # Save the updated data frame to the output directory
+    output_file <- file.path(basedir, basename(file))
+    write.csv(data, file = output_file, row.names = FALSE)
+    message(paste("Processed file:", basename(file)))
+  } 
 
 
 
+
+# 6. KEGG analysis ======================================================
+kegg_updown <- compareCluster(Entrez~significance+celltype, data=cell.gene_ids, fun="enrichKEGG")
 
 
 
